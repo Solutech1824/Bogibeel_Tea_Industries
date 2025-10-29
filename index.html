@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Challan Generator - Bogibeel Tea Industries</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        /* Custom styles for better visual separation and aesthetics */
+        body {
+            /* NEW BACKGROUND IMAGE STYLES */
+            background-color: #e8f5e9; /* Fallback color (Light Green) */
+            background-image: url('https://cdn.pixabay.com/photo/2017/08/29/05/53/tea-garden-2692217_960_720.jpg');
+            background-size: cover;
+            background-position: center center;
+            background-attachment: fixed; /* Keeps the background static when scrolling */
+        }
+        .container {
+            max-width: 960px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            /* Semi-transparent white background for readability */
+            background-color: rgba(255, 255, 255, 0.95);
+        }
+        h1, h2 { color: #2e8b57; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; margin-bottom: 20px; }
+        .calculation-box {
+            background-color: #e6f7ff;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .calculation-box p { margin: 0; font-size: 1.2em; font-weight: bold; color: #006699; }
+        /* NEW STYLE: Manual Summary Box */
+        .manual-summary-box {
+            border: 1px dashed #006699;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #ffffff;
+            margin-top: 15px;
+            display: none; /* Hidden by default */
+        }
+        .manual-summary-box .row div {
+            font-size: 1.1em;
+        }
+        .manual-summary-box .remaining-weight {
+            font-weight: bold;
+        }
+
+        .grower-list-container {
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .grower-table th { background-color: #e8f5e9; position: sticky; top: 0; z-index: 10; }
+        .challan-output { border: 2px solid #2e8b57; padding: 20px; border-radius: 8px; background-color: #f9fffb; }
+        /* Style for hidden manual input column */
+        .manual-input-cell, .manual-input-header {
+            transition: opacity 0.3s, max-width 0.3s;
+            opacity: 0;
+            max-width: 0;
+            overflow: hidden;
+            padding-left: 0;
+            padding-right: 0;
+            border-right: none;
+            border-left: none;
+            vertical-align: middle !important;
+        }
+        .manual-input-cell.active, .manual-input-header.active {
+            opacity: 1;
+            max-width: 150px; /* Adjust as needed */
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+        .manual-input-cell input {
+            max-width: 100px;
+        }
+        /* NEW STYLE: Ensure dropdown menu for search is positioned and scrollable */
+        #agentDropdownMenu.dropdown-menu {
+             max-height: 250px;
+             overflow-y: auto;
+             display: block; /* Override default Bootstrap hiding */
+             position: absolute; /* Ensure it overlays correctly */
+             z-index: 1000;
+             visibility: hidden; /* Use visibility to manage the 'show' state */
+             opacity: 0;
+             transition: opacity 0.2s, visibility 0.2s;
+        }
+        #agentDropdownMenu.dropdown-menu.show {
+             visibility: visible;
+             opacity: 1;
+        }
+        .dropdown-item:active {
+            background-color: #2e8b57;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container p-4 shadow-sm rounded-3">
+        <h1>Bogibeel Tea Industries (Green Leaf Challan Generator)</h1>
+
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label for="challanDate" class="form-label">Date: <span class="text-danger">*</span></label>
+                <input type="date" id="challanDate" class="form-control" required>
+            </div>
+            <div class="col-md-8">
+                <label for="agentSearchInput" class="form-label">Associated Lead Farmer (Agent): <span class="text-danger">*</span></label>
+                <div class="dropdown">
+                    <input type="text" id="agentSearchInput" class="form-control" placeholder="Search or Select Agent" autocomplete="off" required>
+                    <input type="hidden" id="agentSelectValue" required> 
+                    <div id="agentDropdownMenu" class="dropdown-menu w-100">
+                        </div>
+                </div>
+                </div>
+            <div class="col-md-4">
+                <label for="vehicleNo" class="form-label">Vehicle No.:</label>
+                <input type="text" id="vehicleNo" class="form-control" placeholder="E.g., AS-04-XX-1234">
+            </div>
+            <div class="col-md-4">
+                <label for="grossWeight" class="form-label">Gross Weight (Kg): <span class="text-danger">*</span></label>
+                <input type="number" id="grossWeight" class="form-control" min="0" step="1" required oninput="calculateWeight()">
+            </div>
+            <div class="col-md-4">
+                <label for="tareWeight" class="form-label">Tare Weight (Kg): <span class="text-danger">*</span></label>
+                <input type="number" id="tareWeight" class="form-control" min="0" step="1" required oninput="calculateWeight()">
+            </div>
+
+            <div class="col-md-6 row g-2">
+                <label class="form-label mb-0">Deduction (Enter EITHER % OR Kg):</label>
+                <div class="col-sm-6">
+                    <div class="input-group">
+                        <input type="number" id="deductionPercent" class="form-control" min="0" step="0.1" value="0" placeholder="In %" oninput="validateAndCalculate(this, 'deductionKg')">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="input-group">
+                        <input type="number" id="deductionKg" class="form-control" min="0" step="1" placeholder="In Kg" oninput="validateAndCalculate(this, 'deductionPercent')">
+                        <span class="input-group-text">Kg</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="calculation-box">
+                    <p>Final Weight (Kg): <span id="finalWeightDisplay">0</span></p>
+                    <span id="deductionApplied" class="text-muted" style="font-size: 0.9em;">(No Deduction Applied)</span>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="mt-4">2. Grower Selection and Distribution</h2>
+
+        <div class="mb-3">
+            <label class="form-label d-block fw-bold">Distribution Mode: <span class="text-danger">*</span></label>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="distributionMode" id="modeProportional" value="proportional" checked onclick="toggleDistributionMode('proportional')">
+                <label class="form-check-label" for="modeProportional">Automatic</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="distributionMode" id="modeManual" value="manual" onclick="toggleDistributionMode('manual')">
+                <label class="form-check-label" for="modeManual">Manual</label>
+            </div>
+        </div>
+
+        <div id="manualSummaryBox" class="manual-summary-box">
+            <div class="row text-center">
+                <div class="col-6 text-primary">
+                    Distributed: <span id="manualDistributed" class="fw-bold">0</span> Kg
+                </div>
+                <div class="col-6">
+                    Remaining: <span id="manualRemaining" class="remaining-weight text-danger">0</span> Kg
+                </div>
+            </div>
+        </div>
+        <div class="grower-list-container">
+            <table class="table table-striped table-hover grower-table">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;">Select</th>
+                        <th style="width: 20%;">Supplier Code</th>
+                        <th style="width: 30%;">Supplier Name</th>
+                        <th style="width: 10%;">Land (Ha.)</th>
+                        <th class="manual-input-header" id="manualInputHeader">Manual Weight (Kg)</th>
+                        <th style="width: 20%;">Distributed Weight (Kg)</th>
+                    </tr>
+                </thead>
+                <tbody id="growerTableBody">
+                    <tr><td colspan="6" class="text-center">Search and Select an Agent to view growers.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="text-center my-4">
+            <button class="btn btn-success btn-lg" onclick="distributeWeight()">Distribute Final Weight</button>
+        </div>
+
+        <div id="challanOutput" class="challan-output" style="display: none;">
+            <h2 class="text-center">Generated Challan: <span id="challanNumberDisplay"></span></h2>
+
+            <div class="row mb-3">
+                <div class="col-md-6"><p class="mb-1"><strong>Date:</strong> <span id="outDate"></span></p></div>
+                <div class="col-md-6"><p class="mb-1"><strong>Agent:</strong> <span id="outAgent"></span></p></div>
+                <div class="col-md-6"><p class="mb-1"><strong>Vehicle No.:</strong> <span id="outVehicleNo"></span></p></div>
+                <div class="col-md-6"><p class="mb-1"><strong>Final Weight:</strong> <span id="outFinalWeight"></span> Kg (<span id="outDeductionRate"></span>)</p></div>
+            </div>
+
+            <table class="table table-bordered table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th>Supplier Code</th>
+                        <th>Supplier Name</th>
+                        <th>Distributed Weight (Kg)</th>
+                    </tr>
+                </thead>
+                <tbody id="challanDetailsBody">
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="2" class="text-end fw-bold">TOTAL DISTRIBUTED WEIGHT:</td>
+                        <td id="outTotalWeight" class="fw-bold"></td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <div class="d-flex justify-content-end gap-3 mt-3">
+                <button class="btn btn-danger pdf-btn" onclick="downloadChallanPDF()">
+                    ⬇️ Download Challan (PDF)
+                </button>
+                <button class="btn btn-secondary" onclick="downloadChallanTXT()">
+                    📝 Download Challan (TXT)
+                </button>
+            </div>
+            </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script>
+        // --- GLOBAL DATA STORE FOR PDF ---
+        let currentChallanData = {
+            header: {},
+            details: [],
+            totalDistributed: 0
+        };
+
+        // --- DATA FROM CSV FILE (Hardcoded for client-side functionality) ---
+const RAW_GROWER_DATA = [{"code": "BTI/2025/001", "name": "DINESH MISSONG", "agent": "APPUN STG", "landHa": 2.6}, {"code": "BTI/2025/002", "name": "LEKHAKUMAR KAMAN", "agent": "APPUN STG", "landHa": 2.0}, {"code": "BTI/2025/003", "name": "BIPUL DOLEY", "agent": "APPUN STG", "landHa": 1.6}, {"code": "BTI/2025/004", "name": "DHARMENDRA MILI", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/005", "name": "SATRAPATI PAYENG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/006", "name": "MANIK MISSONG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/007", "name": "RAKET MISSONG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/008", "name": "JAYANTA MISSONG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/009", "name": "JAYANTA KAMAN", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/010", "name": "BABIKANTA MISONG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/011", "name": "NETRA MISONG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/012", "name": "NIRMAL PAYENG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/013", "name": "RAJU LAGACHU", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/014", "name": "RAKESH PANGING", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/015", "name": "DIPAK DUTTA", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/016", "name": "RAJA DOLEY", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/017", "name": "LAKHYANATH LAGACHU", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/018", "name": "PRAHLAD BARUAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/019", "name": "KHIRESWAR DUTTA", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/020", "name": "DIGANTA MISONG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/021", "name": "JUNMONI SONOWAL", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/022", "name": "HEMAKANTA KONCH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/023", "name": "KABIN PEGU", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/024", "name": "NITUMONI MILI", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/025", "name": "CHABIT CHETRY", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/026", "name": "SONJOY CHETRY", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/027", "name": "MEMONI NARAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/028", "name": "HEMANTA MILI", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/029", "name": "UMAKANTA DOLEY", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/030", "name": "TULSHI KHATWORA", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/031", "name": "REBAT HATIBORUAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/032", "name": "UTTAM KAMAN", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/033", "name": "TARUN KAMAN", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/034", "name": "HIRA BORUAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/035", "name": "RAJEN MISONG", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/036", "name": "HEMANTA NARAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/037", "name": "DAYANANDA LAGACHU", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/038", "name": "HEMAKANTA MILI", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/039", "name": "GIRISH DOLEY", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/040", "name": "CHENAI NGATEY MILI", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/041", "name": "MITHUN MILI", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/042", "name": "TILESHWAR NARAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/043", "name": "TARANI PEGU", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/044", "name": "DULAL NARAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/045", "name": "GAM PEGU", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/046", "name": "BABUL SONOWAL", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/047", "name": "MANUOJ BARUAH", "agent": "APPUN STG", "landHa": 1.0}, {"code": "BTI/2025/048", "name": "BAIKUNTHA BHARALI", "agent": "BAIKUNTHA BHARALI (ANJANA TG)", "landHa": 1.0}, {"code": "BTI/2025/049", "name": "JAGNESWAR CHUTIA", "agent": "BAIKUNTHA BHARALI (ANJANA TG)", "landHa": 1.0}, {"code": "BTI/2025/050", "name": "SUBHAN BHARALI", "agent": "BAIKUNTHA BHARALI (ANJANA TG)", "landHa": 1.0}, {"code": "BTI/2025/051", "name": "BIKASH GOGOI", "agent": "BIKASH GOGOI (SRAMIK KALYAN MTG)", "landHa": 3.0}, {"code": "BTI/2025/052", "name": "TULSHI KONWAR", "agent": "BIKASH GOGOI (SRAMIK KALYAN MTG)", "landHa": 1.07}, {"code": "BTI/2025/053", "name": "DIMBESWAR GOGOI", "agent": "BISWA GOGOI", "landHa": 1.61}, {"code": "BTI/2025/054", "name": "DIPAK GOGOI", "agent": "DHENUKHANA S T G", "landHa": 1.3}, {"code": "BTI/2025/055", "name": "ANUP DUTTA", "agent": "DHENUKHANA S T G", "landHa": 1.3}, {"code": "BTI/2025/056", "name": "GHANASHYAM GOGOI", "agent": "DHENUKHANA S T G", "landHa": 1.06}, {"code": "BTI/2025/057", "name": "RAKESH SAIKIA SONOWAL", "agent": "DIRGA TEA SHG", "landHa": 2.93}, {"code": "BTI/2025/058", "name": "LILESWAR KAMAN", "agent": "DIRGA TEA SHG", "landHa": 1.6}, {"code": "BTI/2025/059", "name": "BIMAN BARUWATI", "agent": "DIRGA TEA SHG", "landHa": 1.33}, {"code": "BTI/2025/060", "name": "SURAJ CHETRY", "agent": "DIRGA TEA SHG", "landHa": 1.33}, {"code": "BTI/2025/061", "name": "DURGA PRASAD BHARALI", "agent": "DIRGA TEA SHG", "landHa": 1.06}, {"code": "BTI/2025/062", "name": "HEMANTA MILI", "agent": "DONI POLO SHG", "landHa": 1.06}, {"code": "BTI/2025/063", "name": "AVHISHEK KAMAN", "agent": "DONI POLO SHG", "landHa": 1.06}, {"code": "BTI/2025/064", "name": "PRADIP GOGOI", "agent": "GANDHIA STG SHG", "landHa": 2.0}, {"code": "BTI/2025/065", "name": "BIDYUT BORAH", "agent": "GHARMARA NOVODOY S.H.G", "landHa": 1.2}, {"code": "BTI/2025/066", "name": "NITYA GOGOI", "agent": "GHARMARA NOVODOY S.H.G", "landHa": 1.07}, {"code": "BTI/2025/067", "name": "BISWA BORUAH", "agent": "GHARMARA NOVODOY S.H.G", "landHa": 1.07}, {"code": "BTI/2025/068", "name": "BIJIT SARMAH", "agent": "GHARMARA SHG", "landHa": 2.0}, {"code": "BTI/2025/069", "name": "DIGANTA BORUAH", "agent": "GHARMARA SHG", "landHa": 1.8}, {"code": "BTI/2025/070", "name": "MOHAN BORUAH", "agent": "GHARMARA SHG", "landHa": 1.73}, {"code": "BTI/2025/071", "name": "PABITRA BORUAH", "agent": "GHARMARA SHG", "landHa": 1.6}, {"code": "BTI/2025/072", "name": "RAGHU BORUAH", "agent": "GHARMARA SHG", "landHa": 1.5}, {"code": "BTI/2025/073", "name": "GUNJAN KUMAR BORUAH", "agent": "GHARMARA SHG", "landHa": 1.47}, {"code": "BTI/2025/074", "name": "NUMAL BORUAH", "agent": "GHARMARA SHG", "landHa": 1.46}, {"code": "BTI/2025/075", "name": "SOWALA BORUAH", "agent": "GHARMARA SHG", "landHa": 1.34}, {"code": "BTI/2025/076", "name": "DITU MONI BORUAH", "agent": "GHARMARA SHG", "landHa": 1.33}, {"code": "BTI/2025/077", "name": "ATUL BORUAH", "agent": "GHARMARA SHG", "landHa": 1.3}, {"code": "BTI/2025/078", "name": "RASHMI REKHA SARMAH", "agent": "GHARMARA SHG", "landHa": 1.26}, {"code": "BTI/2025/079", "name": "RAJEN BORAH", "agent": "GHARMARA SHG", "landHa": 1.2}, {"code": "BTI/2025/080", "name": "HEMANTA GOGOI", "agent": "GHARMARA SHG", "landHa": 1.06}, {"code": "BTI/2025/081", "name": "PANKAJ BORAH", "agent": "GHARMARA SHG", "landHa": 1.02}, {"code": "BTI/2025/082", "name": "MANUJ BORAH", "agent": "GHARMARA SHG", "landHa": 1.0}, {"code": "BTI/2025/083", "name": "HEMANTA BORUAH", "agent": "GHARMARA SHG", "landHa": 1.0}, {"code": "BTI/2025/084", "name": "KHAGEN BORUAH", "agent": "GHARMARA SHG", "landHa": 1.0}, {"code": "BTI/2025/085", "name": "BAGEN BORAH", "agent": "GHARMARA SHG", "landHa": 1.0}, {"code": "BTI/2025/086", "name": "DHAMESWAR BORUAH", "agent": "GHARMARA SHG", "landHa": 1.0}, {"code": "BTI/2025/087", "name": "GIRIN SAIKIA", "agent": "GHILAMARA STG SHG", "landHa": 1.33}, {"code": "BTI/2025/088", "name": "MUHI CHANDRA CHUTIA", "agent": "GHILAMARA STG SHG", "landHa": 1.33}, {"code": "BTI/2025/089", "name": "PRADIP GOGOI", "agent": "GHILAMARA STG SHG", "landHa": 1.3}, {"code": "BTI/2025/090", "name": "RANJIT SAIKIA", "agent": "GHILAMARA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/091", "name": "DIPEN CHUTIA", "agent": "GHILAMARA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/092", "name": "JADUMONI KONCH", "agent": "GOPALPUR STG", "landHa": 1.6}, {"code": "BTI/2025/093", "name": "KRISHNA KONCH", "agent": "GOPALPUR STG", "landHa": 1.34}, {"code": "BTI/2025/094", "name": "MANURANJAN BORUAH", "agent": "GREEN LIFE SHG", "landHa": 4.0}, {"code": "BTI/2025/095", "name": "ARUN PEGU", "agent": "GREEN LIFE SHG", "landHa": 3.33}, {"code": "BTI/2025/096", "name": "LOKARANJAN BORAH", "agent": "GREEN LIFE SHG", "landHa": 3.2}, {"code": "BTI/2025/097", "name": "RUBI CHUTIA HAZARIKA", "agent": "GREEN LIFE SHG", "landHa": 2.13}, {"code": "BTI/2025/098", "name": "BHADESWAR DEKA", "agent": "GREEN LIFE SHG", "landHa": 2.0}, {"code": "BTI/2025/099", "name": "CHITTARANJAN BORAH", "agent": "GREEN LIFE SHG", "landHa": 2.0}, {"code": "BTI/2025/100", "name": "KINARAM BORAH", "agent": "GREEN LIFE SHG", "landHa": 2.0}, {"code": "BTI/2025/101", "name": "BOLIN GOGOI", "agent": "GREEN LIFE SHG", "landHa": 2.0}, {"code": "BTI/2025/102", "name": "BIJU SONOWAL", "agent": "GREEN LIFE SHG", "landHa": 1.88}, {"code": "BTI/2025/103", "name": "BIJAY SHANKAR KULI", "agent": "GREEN LIFE SHG", "landHa": 1.6}, {"code": "BTI/2025/104", "name": "KRISHNA SAIKIA", "agent": "GREEN LIFE SHG", "landHa": 1.6}, {"code": "BTI/2025/105", "name": "BIRENDRANATH GOGOI", "agent": "GREEN LIFE SHG", "landHa": 1.4}, {"code": "BTI/2025/106", "name": "MONIRAM SONOWAL", "agent": "GREEN LIFE SHG", "landHa": 1.33}, {"code": "BTI/2025/107", "name": "RAJMONI CHUTIA", "agent": "GREEN LIFE SHG", "landHa": 1.33}, {"code": "BTI/2025/108", "name": "DIPTI SONOWAL", "agent": "GREEN LIFE SHG", "landHa": 1.33}, {"code": "BTI/2025/109", "name": "GOPAL CHANDRA HAZARIKA", "agent": "GREEN LIFE SHG", "landHa": 1.33}, {"code": "BTI/2025/110", "name": "DEBESWAR HAZARIKA", "agent": "GREEN LIFE SHG", "landHa": 1.33}, {"code": "BTI/2025/111", "name": "TARUN HAZARIKA", "agent": "GREEN LIFE SHG", "landHa": 1.33}, {"code": "BTI/2025/112", "name": "KARTIK PEGU", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/113", "name": "CHENIRAM SAIKIA", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/114", "name": "JOY KANTA DOLEY", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/115", "name": "RAKHA NEWAR", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/116", "name": "PROBHAT DOLEY", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/117", "name": "CHAMPA SONOWAL", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/118", "name": "SAILYO KAMAN", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/119", "name": "DURGADHAR MILI", "agent": "GREEN LIFE SHG", "landHa": 1.06}, {"code": "BTI/2025/120", "name": "AMRIT DAS", "agent": "HARHI MADHUPUR SHG", "landHa": 2.32}, {"code": "BTI/2025/121", "name": "KAMAL DAS", "agent": "HARHI MADHUPUR SHG", "landHa": 1.3}, {"code": "BTI/2025/122", "name": "BHADRA DAS", "agent": "HARHI MADHUPUR SHG", "landHa": 1.07}, {"code": "BTI/2025/123", "name": "PRANAB DAS", "agent": "HARHI MADHUPUR SHG", "landHa": 1.0}, {"code": "BTI/2025/124", "name": "KHAGEN DAS", "agent": "HARHI MADHUPUR SHG", "landHa": 1.0}, {"code": "BTI/2025/125", "name": "BULAN DAS", "agent": "HARHI MADHUPUR SHG", "landHa": 1.0}, {"code": "BTI/2025/126", "name": "CHENIMAI SAIKIA", "agent": "HARHI STG SHG", "landHa": 2.13}, {"code": "BTI/2025/127", "name": "DHARMESWAR SAIKIA", "agent": "HARHI STG SHG", "landHa": 2.0}, {"code": "BTI/2025/128", "name": "PUTUL PHUKAN", "agent": "HARHI STG SHG", "landHa": 2.0}, {"code": "BTI/2025/129", "name": "DILIP BORUAH", "agent": "HARHI STG SHG", "landHa": 1.87}, {"code": "BTI/2025/130", "name": "DHURBA JYOTI SAIKIA", "agent": "HARHI STG SHG", "landHa": 1.5}, {"code": "BTI/2025/131", "name": "SANKARMAN CHETRY", "agent": "HARHI STG SHG", "landHa": 1.5}, {"code": "BTI/2025/132", "name": "DULU SARMAH", "agent": "HARHI STG SHG", "landHa": 1.5}, {"code": "BTI/2025/133", "name": "BHUDHAR BORUAH", "agent": "HARHI STG SHG", "landHa": 1.5}, {"code": "BTI/2025/134", "name": "RABIN DUTTA", "agent": "HARHI STG SHG", "landHa": 1.5}, {"code": "BTI/2025/135", "name": "GHANSHYAM SAIKIA", "agent": "HARHI STG SHG", "landHa": 1.5}, {"code": "BTI/2025/136", "name": "GOBIN CH. BORAH", "agent": "HARHI STG SHG", "landHa": 1.4}, {"code": "BTI/2025/137", "name": "NABAJYOTI BARAH", "agent": "HARHI STG SHG", "landHa": 1.4}, {"code": "BTI/2025/138", "name": "GOBIN GOGOI", "agent": "HARHI STG SHG", "landHa": 1.4}, {"code": "BTI/2025/139", "name": "SUMESWAR GOGOI", "agent": "HARHI STG SHG", "landHa": 1.4}, {"code": "BTI/2025/140", "name": "RANJIT BARAH", "agent": "HARHI STG SHG", "landHa": 1.28}, {"code": "BTI/2025/141", "name": "BIKASH CHETRY", "agent": "HARHI STG SHG", "landHa": 1.25}, {"code": "BTI/2025/142", "name": "PURNA BORUAH", "agent": "HARHI STG SHG", "landHa": 1.2}, {"code": "BTI/2025/143", "name": "KALYAN BORAH", "agent": "HARHI STG SHG", "landHa": 1.2}, {"code": "BTI/2025/144", "name": "SATAYA NARAYAN GOGOI", "agent": "HARHI STG SHG", "landHa": 1.06}, {"code": "BTI/2025/145", "name": "RUHINI DOLEY", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/146", "name": "BASANTA PHUKAN", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/147", "name": "LILA BAHADUR CHETRY", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/148", "name": "RITUMONI GOSWAMI", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/149", "name": "BIREN BORAH", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/150", "name": "DEVA RAJKHOWA", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/151", "name": "DHAN DUTTA", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/152", "name": "DHARANI KONCH", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/153", "name": "MIHIR GOGOI", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/154", "name": "LARENJU DUTTA", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/155", "name": "PRANJIT GOGOI", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/156", "name": "ABHIJIT DUTTA", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/157", "name": "PRALLAV GOGOI", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/158", "name": "SUCHEN GOGOI", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/159", "name": "NIPEN DUTTA", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/160", "name": "PRADIP SAIKIA", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/161", "name": "RUPJYOTI BARUAH", "agent": "HARHI STG SHG", "landHa": 1.0}, {"code": "BTI/2025/162", "name": "DEBAJYOTI GOHAIN", "agent": "KECHERUGURI SHG", "landHa": 2.0}, {"code": "BTI/2025/163", "name": "DIPANKAR GOHAIN", "agent": "KECHERUGURI SHG", "landHa": 2.0}, {"code": "BTI/2025/164", "name": "RITUMONI SAIKIA", "agent": "KRIKHAK SARATHI STG", "landHa": 1.42}, {"code": "BTI/2025/165", "name": "UMESH HAZARIKA", "agent": "MACHKHOWA SGH", "landHa": 3.0}, {"code": "BTI/2025/166", "name": "REBAT GOGOI", "agent": "MACHKHOWA SGH", "landHa": 2.6}, {"code": "BTI/2025/167", "name": "MANUJ JYOTI PHUKAN", "agent": "MACHKHOWA SGH", "landHa": 2.5}, {"code": "BTI/2025/168", "name": "GUPINATH KUTUM", "agent": "MACHKHOWA SGH", "landHa": 2.5}, {"code": "BTI/2025/169", "name": "KRISHU CHETRY", "agent": "MACHKHOWA SGH", "landHa": 2.11}, {"code": "BTI/2025/170", "name": "DILIP GOHAIN", "agent": "MACHKHOWA SGH", "landHa": 2.0}, {"code": "BTI/2025/171", "name": "DULAL HAZARIKA", "agent": "MACHKHOWA SGH", "landHa": 2.0}, {"code": "BTI/2025/172", "name": "BALIN PHUKAN", "agent": "MACHKHOWA SGH", "landHa": 2.0}, {"code": "BTI/2025/173", "name": "RAJU CHETRY", "agent": "MACHKHOWA SGH", "landHa": 2.0}, {"code": "BTI/2025/174", "name": "BICHITRA BORA", "agent": "MACHKHOWA SGH", "landHa": 2.0}, {"code": "BTI/2025/175", "name": "DEBAN BARUAH", "agent": "MACHKHOWA SGH", "landHa": 2.0}, {"code": "BTI/2025/176", "name": "DIMBESWAR PHUKAN", "agent": "MACHKHOWA SGH", "landHa": 1.8}, {"code": "BTI/2025/177", "name": "CHANDRA PHUKAN", "agent": "MACHKHOWA SGH", "landHa": 1.71}, {"code": "BTI/2025/178", "name": "PRAKASH KONCH", "agent": "MACHKHOWA SGH", "landHa": 1.69}, {"code": "BTI/2025/179", "name": "BIPUL BORUAH", "agent": "MACHKHOWA SGH", "landHa": 1.6}, {"code": "BTI/2025/180", "name": "MOHENDRA SAIKIA", "agent": "MACHKHOWA SGH", "landHa": 1.6}, {"code": "BTI/2025/181", "name": "KAPIL DUTTA", "agent": "MACHKHOWA SGH", "landHa": 1.6}, {"code": "BTI/2025/182", "name": "CHABIN BORUAH", "agent": "MACHKHOWA SGH", "landHa": 1.5}, {"code": "BTI/2025/183", "name": "HEMADHAR CHUTIA", "agent": "MACHKHOWA SGH", "landHa": 1.5}, {"code": "BTI/2025/184", "name": "RAJIB KAMAN", "agent": "MACHKHOWA SGH", "landHa": 1.5}, {"code": "BTI/2025/185", "name": "RATAN CHETRY", "agent": "MACHKHOWA SGH", "landHa": 1.5}, {"code": "BTI/2025/186", "name": "RANJIT KONCH", "agent": "MACHKHOWA SGH", "landHa": 1.5}, {"code": "BTI/2025/187", "name": "MRIDUL DUTTA", "agent": "MACHKHOWA SGH", "landHa": 1.32}, {"code": "BTI/2025/188", "name": "KIRAN CHAMUAH", "agent": "MACHKHOWA SGH", "landHa": 1.31}, {"code": "BTI/2025/189", "name": "ACHINTA DUTTA", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/190", "name": "ATUL KONCH", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/191", "name": "BINUD GOGOI", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/192", "name": "DAMBARU DHAR GOGOI", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/193", "name": "GOBINDA KONCH", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/194", "name": "HEMEN HAJORIKA", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/195", "name": "JUGAL BURAGOHAIN", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/196", "name": "LAKHAN CHANGMAI", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/197", "name": "MILAN JYOTI SAIKIA", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/198", "name": "KHIRUD LAGSHU", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/199", "name": "JUGESH LUGASHU", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/200", "name": "BABUL CHETRY", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/201", "name": "KRISHNA DUTTA", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/202", "name": "DIPAK CHETRY", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/203", "name": "JADUMONI KONCH", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/204", "name": "KAMALESWAR KONCH", "agent": "MACHKHOWA SGH", "landHa": 1.0}, {"code": "BTI/2025/205", "name": "PRASANA GOSWAMI", "agent": "MADHUPUR MTG", "landHa": 1.06}, {"code": "BTI/2025/206", "name": "MUKUT CH KHANIKAR", "agent": "MUKUT CH KHANIKAR", "landHa": 2.0}, {"code": "BTI/2025/207", "name": "SURESH NARAH", "agent": "MUKUT CH KHANIKAR", "landHa": 1.86}, {"code": "BTI/2025/208", "name": "LAKHESWAR NARAH", "agent": "MUKUT CH KHANIKAR", "landHa": 1.86}, {"code": "BTI/2025/209", "name": "JYOTI PATRA", "agent": "PRAGATI SMALL TEA GROWERS S.H.G", "landHa": 1.0}, {"code": "BTI/2025/210", "name": "TILUTPAL BORPATRA", "agent": "PRAGATI SMALL TEA GROWERS S.H.G", "landHa": 1.0}, {"code": "BTI/2025/211", "name": "PROSAD BURAGOHAIN", "agent": "PRAGATI SMALL TEA GROWERS S.H.G", "landHa": 1.0}, {"code": "BTI/2025/212", "name": "C GOGOI", "agent": "SAMANNAY STG", "landHa": 2.4}, {"code": "BTI/2025/213", "name": "HUMEN PHUKAN", "agent": "SAMANNAY STG", "landHa": 2.06}, {"code": "BTI/2025/214", "name": "PRADIP SAIKIA", "agent": "SAMANNAY STG", "landHa": 2.0}, {"code": "BTI/2025/215", "name": "KECHAV GOGOI", "agent": "SAMANNAY STG", "landHa": 1.98}, {"code": "BTI/2025/216", "name": "NITUL CHUTIA", "agent": "SAMANNAY STG", "landHa": 1.7}, {"code": "BTI/2025/217", "name": "INDRESWAR CHUTIA", "agent": "SAMANNAY STG", "landHa": 1.61}, {"code": "BTI/2025/218", "name": "SATYA GOGOI", "agent": "SAMANNAY STG", "landHa": 1.5}, {"code": "BTI/2025/219", "name": "KULENDRA CHAMUAH", "agent": "SAMANNAY STG", "landHa": 1.49}, {"code": "BTI/2025/220", "name": "BIMAN GOGOI", "agent": "SAMANNAY STG", "landHa": 1.33}, {"code": "BTI/2025/221", "name": "PREMA GOGOI", "agent": "SAMANNAY STG", "landHa": 1.32}, {"code": "BTI/2025/222", "name": "HARICHANDRA GOGOI", "agent": "SAMANNAY STG", "landHa": 1.32}, {"code": "BTI/2025/223", "name": "RAJESH SENAPATI", "agent": "SAMANNAY STG", "landHa": 1.2}, {"code": "BTI/2025/224", "name": "KANAK GOGOI", "agent": "SAMANNAY STG", "landHa": 1.17}, {"code": "BTI/2025/225", "name": "SUNIL CHANGMAI", "agent": "SAMANNAY STG", "landHa": 1.0}, {"code": "BTI/2025/226", "name": "MONTU SAIKIA", "agent": "SAMANNAY STG", "landHa": 1.0}, {"code": "BTI/2025/227", "name": "LAKHI CHUTIA", "agent": "SAMANNAY STG", "landHa": 1.0}, {"code": "BTI/2025/228", "name": "UTPAL PHUKAN", "agent": "SANMILITA STG SHG", "landHa": 2.0}, {"code": "BTI/2025/229", "name": "HIRANYA PHUKAN", "agent": "SANMILITA STG SHG", "landHa": 2.0}, {"code": "BTI/2025/230", "name": "CHAMPAK GOGOI", "agent": "SANMILITA STG SHG", "landHa": 2.0}, {"code": "BTI/2025/231", "name": "RAKESH DUTTA", "agent": "SANMILITA STG SHG", "landHa": 1.5}, {"code": "BTI/2025/232", "name": "JYOTI PRASAD PHUKAN", "agent": "SANMILITA STG SHG", "landHa": 1.33}, {"code": "BTI/2025/233", "name": "PRADIP KONCH", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/234", "name": "DIPAK KONCH", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/235", "name": "MULAN DUTTA", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/236", "name": "BIRSING BASNET", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/237", "name": "ATUL CHAMUAH", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/238", "name": "DILIP ADHIKARI CHETRY", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/239", "name": "INDRA KONCH", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/240", "name": "RANJIT KONCH", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/241", "name": "PABITRA PHUAKN", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/242", "name": "KIRAN KONCH", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/243", "name": "SIDA BURAGOHAIN", "agent": "SANMILITA STG SHG", "landHa": 1.0}, {"code": "BTI/2025/244", "name": "RUHITESWAR POGAG", "agent": "SUBANSIRI SHG", "landHa": 2.67}, {"code": "BTI/2025/245", "name": "RAJIB NARAH", "agent": "SUBANSIRI SHG", "landHa": 1.47}, {"code": "BTI/2025/246", "name": "MAHANTA CHUTIA", "agent": "SUBANSIRI SHG", "landHa": 1.3}, {"code": "BTI/2025/247", "name": "TRIDEEP SAIKIA", "agent": "SUBANSIRI SHG", "landHa": 1.0}, {"code": "BTI/2025/248", "name": "ARUP BORUAH", "agent": "SUROJ JYOTI SHG", "landHa": 2.0}, {"code": "BTI/2025/249", "name": "MINTU MONI CHUTIA", "agent": "SUROJ JYOTI SHG", "landHa": 2.0}, {"code": "BTI/2025/250", "name": "SARBESWAR BORUAH", "agent": "SUROJ JYOTI SHG", "landHa": 1.25}, {"code": "BTI/2025/251", "name": "SEWATY BORUAH", "agent": "SUROJ JYOTI SHG", "landHa": 1.0}, {"code": "BTI/2025/252", "name": "THUPITARA TEA CULTIVATION", "agent": "THUPITARA TEA CULTIVATION", "landHa": 9.86}, {"code": "BTI/2025/253", "name": "P.K. TEA CULTIVATION", "agent": "P.K. TEA CULTIVATION", "landHa": 5.62}, {"code": "BTI/2025/254", "name": "NADANI TEA ESTAE", "agent": "NADANI TEA ESTAE", "landHa": 3.18}, {"code": "BTI/2025/255", "name": "CHIRANJIB GOGOI / CHITU GOGOI", "agent": "CHIRANJIB GOGOI / CHITU GOGOI", "landHa": 2.4}, {"code": "BTI/2025/256", "name": "BHABENDRA NARAH", "agent": "BHABENDRA NARAH", "landHa": 2.04}, {"code": "BTI/2025/257", "name": "JITUMONI BARUAH", "agent": "JITUMONI BARUAH", "landHa": 1.34}, {"code": "BTI/2025/258", "name": "BISWA GOGOI", "agent": "BISWA GOGOI", "landHa": 1.34}, {"code": "BTI/2025/259", "name": "PARTHA PRATIM DUTTA", "agent": "PARTHA PRATIM DUTTA", "landHa": 1.33}, {"code": "BTI/2025/260", "name": "ROMEN KONCH", "agent": "ROMEN KONCH", "landHa": 1.07}];
+        /**
+         * Generates the current date in YYYY-MM-DD format, which is required
+         * for HTML date inputs.
+         * @returns {string} Current date string.
+         */
+        function getCurrentDateFormatted() {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            // getMonth() is 0-indexed, so add 1
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        /**
+         * Handles the selection of an agent from the dropdown list.
+         */
+        function selectAgent(e, agent) {
+            e.preventDefault(); // Prevent default link behavior
+
+            const input = document.getElementById('agentSearchInput');
+            const hiddenValue = document.getElementById('agentSelectValue');
+            const dropdownMenu = document.getElementById('agentDropdownMenu');
+
+            // 1. Update form fields
+            input.value = agent; // Display the name in the input
+            hiddenValue.value = agent; // Set the actual value
+            dropdownMenu.classList.remove('show'); // Hide the list
+
+            // 2. Trigger grower list filter
+            filterGrowers(); 
+        }
+
+        /**
+         * Filters the agent list in real-time based on the search input value.
+         */
+        function filterAgentList() {
+            const input = document.getElementById('agentSearchInput');
+            const filter = input.value.toUpperCase();
+            const dropdownMenu = document.getElementById('agentDropdownMenu');
+            const items = dropdownMenu.getElementsByTagName('a');
+            
+            let matchFound = false;
+            let exactMatchFound = false;
+
+            for (let i = 0; i < items.length; i++) {
+                const txtValue = items[i].textContent || items[i].innerText;
+                if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                    items[i].style.display = "";
+                    matchFound = true;
+                    if (txtValue.toUpperCase() === filter) {
+                        exactMatchFound = true;
+                    }
+                } else {
+                    items[i].style.display = "none";
+                }
+            }
+
+            // Toggle Dropdown Visibility
+            if (document.activeElement === input && matchFound) {
+                 // Show dropdown only when input is focused and there are matches
+                 dropdownMenu.classList.add('show');
+            } else if (input.value.length > 0 && matchFound) {
+                 // Keep visible while typing if matches exist
+                 dropdownMenu.classList.add('show');
+            } else {
+                 dropdownMenu.classList.remove('show');
+            }
+
+            const hiddenValue = document.getElementById('agentSelectValue');
+
+            // Clear growers list if input changes and doesn't match a *selected* value
+            if (hiddenValue.value !== input.value) {
+                hiddenValue.value = ''; // Clear confirmation if search term changes
+                const tbody = document.getElementById('growerTableBody');
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center">Search and Select an Agent to view growers.</td></tr>';
+            }
+        }
+
+
+        // Populate Agent Dropdown on load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Get unique agents
+            let agents = [...new Set(RAW_GROWER_DATA.map(g => g.agent))];
+            
+            // Sort agents alphabetically
+            agents.sort((a, b) => a.localeCompare(b));
+            
+            const dropdownMenu = document.getElementById('agentDropdownMenu');
+            
+            // Populate the new dropdown menu with list items
+            agents.forEach(agent => {
+                const item = document.createElement('a');
+                item.classList.add('dropdown-item');
+                item.href = '#';
+                item.textContent = agent;
+                item.dataset.value = agent; // Store the agent name as the value
+                
+                // Add click handler to select the agent and trigger grower filter
+                item.onclick = (e) => selectAgent(e, agent);
+                dropdownMenu.appendChild(item);
+            });
+            
+            // Set default date to current date
+            document.getElementById('challanDate').value = getCurrentDateFormatted();
+            
+            // Initial setup
+            calculateWeight();
+            toggleDistributionMode('proportional');
+
+            // Setup Search Input Listeners
+            document.getElementById('agentSearchInput').addEventListener('input', filterAgentList);
+            // Hide the dropdown when blurring, but with a slight delay to allow click on an option
+            document.getElementById('agentSearchInput').addEventListener('blur', () => {
+                setTimeout(() => {
+                    document.getElementById('agentDropdownMenu').classList.remove('show');
+                }, 150);
+            });
+            document.getElementById('agentSearchInput').addEventListener('focus', () => {
+                 // When focusing, if there's text, show filtered list. If empty, show all.
+                 filterAgentList(); 
+            });
+        });
+
+        // --- MUTUAL EXCLUSION VALIDATION ---
+
+        function validateAndCalculate(currentInput, otherInputId) {
+            const otherInput = document.getElementById(otherInputId);
+
+            // Check if the current input has a value > 0
+            if (parseFloat(currentInput.value) > 0) {
+                // If current input has a value, disable and clear the other one
+                if (otherInput.value !== '') {
+                     otherInput.value = '';
+                }
+                otherInput.setAttribute('disabled', 'true');
+            } else {
+                // If current input is empty or 0, enable the other one
+                otherInput.removeAttribute('disabled');
+            }
+
+            calculateWeight();
+            // Recalculate manual summary if we are in manual mode (in case the final weight changed)
+            if (document.getElementById('modeManual').checked) {
+                updateManualDistributionSummary();
+            }
+        }
+
+        // --- CALCULATIONS AND DISPLAY ---
+
+        function calculateWeight() {
+            const gross = parseFloat(document.getElementById('grossWeight').value) || 0;
+            const tare = parseFloat(document.getElementById('tareWeight').value) || 0;
+            const deductionPercent = parseFloat(document.getElementById('deductionPercent').value) || 0;
+            const deductionKg = parseFloat(document.getElementById('deductionKg').value) || 0;
+
+            let netWeight = gross - tare;
+
+            if (netWeight <= 0) {
+                document.getElementById('finalWeightDisplay').textContent = 0;
+                document.getElementById('deductionApplied').textContent = `(Net Weight is 0 or less)`;
+                return { finalWeight: 0, appliedDeduction: 0, isKgDeduction: false };
+            }
+
+            let finalWeight = netWeight;
+            let appliedDeductionDisplay = `(No Deduction Applied)`;
+            let appliedDeductionValue = 0;
+            let isKgDeduction = false;
+
+            // 1. Apply Percentage Deduction
+            if (deductionPercent > 0) {
+                finalWeight = netWeight * (1 - deductionPercent / 100);
+                appliedDeductionDisplay = `(${deductionPercent.toFixed(1)}% Applied)`;
+                appliedDeductionValue = deductionPercent;
+                isKgDeduction = false;
+            }
+            // 2. Apply Absolute (Kg) Deduction
+            else if (deductionKg > 0) {
+                finalWeight = netWeight - deductionKg;
+                appliedDeductionDisplay = `(${deductionKg.toLocaleString()} Kg Applied)`;
+                appliedDeductionValue = deductionKg;
+                isKgDeduction = true;
+
+                if (finalWeight < 0) {
+                    finalWeight = 0;
+                }
+            }
+
+            const roundedFinalWeight = Math.round(finalWeight);
+
+            document.getElementById('deductionApplied').textContent = appliedDeductionDisplay;
+            document.getElementById('finalWeightDisplay').textContent = roundedFinalWeight.toLocaleString();
+
+            return {
+                finalWeight: roundedFinalWeight,
+                appliedDeduction: appliedDeductionValue,
+                isKgDeduction: isKgDeduction,
+                deductionDisplay: appliedDeductionDisplay
+            };
+        }
+
+        // --- MANUAL DISTRIBUTION REAL-TIME SUMMARY ---
+
+        function updateManualDistributionSummary() {
+            const weightResult = calculateWeight();
+            const finalWeight = weightResult.finalWeight;
+
+            // Only consider enabled inputs (i.e., selected growers in manual mode)
+            const inputs = document.querySelectorAll('.grower-manual-input:not(:disabled)');
+            let distributedTotal = 0;
+
+            inputs.forEach(input => {
+                distributedTotal += parseFloat(input.value) || 0;
+            });
+
+            const remainingWeight = finalWeight - distributedTotal;
+
+            const distributedEl = document.getElementById('manualDistributed');
+            const remainingEl = document.getElementById('manualRemaining');
+
+            distributedEl.textContent = distributedTotal.toLocaleString();
+            remainingEl.textContent = remainingWeight.toLocaleString();
+
+            // Highlight remaining weight based on status
+            if (remainingWeight === 0) {
+                remainingEl.classList.remove('text-danger', 'text-warning');
+                remainingEl.classList.add('text-success');
+            } else if (remainingWeight > 0) {
+                remainingEl.classList.remove('text-success', 'text-warning');
+                remainingEl.classList.add('text-danger');
+            } else { // remainingWeight < 0 (Over-distributed)
+                remainingEl.classList.remove('text-success', 'text-danger');
+                remainingEl.classList.add('text-warning');
+            }
+        }
+
+
+        // --- GROWER FILTERING & UI TOGGLING ---
+
+        let filteredGrowers = [];
+
+        function toggleDistributionMode(mode) {
+            const isManual = mode === 'manual';
+            const manualCells = document.querySelectorAll('.manual-input-cell');
+            const manualHeader = document.getElementById('manualInputHeader');
+            const manualSummaryBox = document.getElementById('manualSummaryBox');
+
+            // Toggle Manual Summary Box visibility
+            manualSummaryBox.style.display = isManual ? 'block' : 'none';
+
+            // Toggle header class
+            if (isManual) {
+                manualHeader.classList.add('active');
+            } else {
+                manualHeader.classList.remove('active');
+            }
+
+            // Toggle row input visibility/status
+            manualCells.forEach(cell => {
+                const input = cell.querySelector('input');
+                const checkbox = cell.parentElement.querySelector('input[type="checkbox"]');
+
+                if (isManual) {
+                    cell.classList.add('active');
+                    if (input) {
+                        input.style.display = 'block';
+                        // Only enable if the grower is checked
+                        input.disabled = !checkbox.checked;
+                    }
+                } else {
+                    cell.classList.remove('active');
+                    if (input) {
+                        input.style.display = 'none';
+                        input.disabled = true;
+                        input.value = 0; // Clear manual value when switching to auto mode
+                    }
+                }
+            });
+
+            // Always clear the distributed weight display when switching mode
+            document.querySelectorAll('#growerTableBody td[id^="weight-"]').forEach(cell => cell.textContent = "0");
+
+
+            if (isManual) {
+                updateManualDistributionSummary(); // Initialize manual summary
+            }
+        }
+
+        function toggleManualRow(checkbox) {
+            const mode = document.querySelector('input[name="distributionMode"]:checked').value;
+            const code = checkbox.dataset.code;
+            const input = document.querySelector(`.grower-manual-input[data-code="${code}"]`);
+
+            if (mode === 'manual' && input) {
+                input.disabled = !checkbox.checked;
+                if (!checkbox.checked) {
+                    input.value = 0; // Clear value if unchecked
+                }
+                updateManualDistributionSummary(); // Update summary
+            }
+        }
+
+
+        function filterGrowers() {
+            // Read from the new hidden input field
+            const selectedAgent = document.getElementById('agentSelectValue').value;
+            const tbody = document.getElementById('growerTableBody');
+            tbody.innerHTML = '';
+            document.getElementById('challanOutput').style.display = 'none';
+
+            if (!selectedAgent) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center">Search and Select an Agent to view growers.</td></tr>';
+                return;
+            }
+
+            filteredGrowers = RAW_GROWER_DATA.filter(g => g.agent === selectedAgent).map(g => ({...g, weight: 0}));
+
+            // --- START OF NEW SORTING LOGIC ---
+            // Sort the filtered growers by land area (landHa) high to low
+            filteredGrowers.sort((a, b) => b.landHa - a.landHa);
+            // --- END OF NEW SORTING LOGIC ---
+
+            filteredGrowers.forEach(grower => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td><input type="checkbox" data-code="${grower.code}" onchange="toggleManualRow(this)"></td>
+                    <td>${grower.code}</td>
+                    <td>${grower.name}</td>
+                    <td>${grower.landHa.toFixed(3)}</td>
+                    <td class="manual-input-cell" data-code="${grower.code}">
+                        <input type="number" class="form-control form-control-sm grower-manual-input" data-code="${grower.code}" min="0" value="0" disabled style="display: none;" oninput="updateManualDistributionSummary()">
+                    </td>
+                    <td id="weight-${grower.code}">0</td>
+                `;
+            });
+            // Re-apply the current mode styling after loading new growers
+            const currentMode = document.querySelector('input[name="distributionMode"]:checked').value;
+            toggleDistributionMode(currentMode);
+        }
+
+        // --- CORE DISTRIBUTION LOGIC HELPERS ---
+
+        function calculateProportionalWeight(selectedGrowers, finalWeight) {
+            const totalLandArea = selectedGrowers.reduce((sum, g) => sum + g.landHa, 0);
+
+            if (totalLandArea === 0) {
+                 alert("Selected growers must have a positive land holding area to distribute the weight proportionally.");
+                 return null;
+            }
+
+            let remainingWeight = finalWeight;
+            let growersWithRemainder = [];
+
+            selectedGrowers.forEach(grower => {
+                const share = (grower.landHa / totalLandArea) * finalWeight;
+                grower.weight = Math.floor(share);
+                remainingWeight -= grower.weight;
+                growersWithRemainder.push({ grower, remainder: share - grower.weight });
+            });
+
+            // Distribute the remainder based on the highest decimals
+            growersWithRemainder.sort((a, b) => b.remainder - a.remainder);
+
+            for (let i = 0; i < remainingWeight; i++) {
+                growersWithRemainder[i % growersWithRemainder.length].grower.weight += 1;
+            }
+
+            return selectedGrowers.filter(g => g.weight > 0);
+        }
+
+        function calculateManualWeight(selectedGrowers, finalWeight) {
+            let manualTotal = 0;
+            let distributedGrowers = [];
+
+            // Get total from currently distributed growers (should match the real-time summary)
+            const inputs = document.querySelectorAll('.grower-manual-input:not(:disabled)');
+
+            inputs.forEach(input => {
+                const code = input.dataset.code;
+                const manualWeight = parseFloat(input.value) || 0;
+
+                if (manualWeight > 0) {
+                    const grower = selectedGrowers.find(g => g.code === code);
+                    if (grower) {
+                        grower.weight = manualWeight;
+                        manualTotal += manualWeight;
+                        distributedGrowers.push(grower);
+                    }
+                }
+            });
+
+            // Validation: Must match the net weight exactly
+            if (manualTotal !== finalWeight) {
+                alert(`Manual distribution error: The total distributed weight (${manualTotal.toLocaleString()} Kg) must exactly match the Final Distributed Weight (${finalWeight.toLocaleString()} Kg). Please adjust your manual entries.`);
+                return null; // Signal failure
+            }
+
+            return distributedGrowers;
+        }
+
+
+        // --- CORE DISTRIBUTION LOGIC ---
+        function distributeWeight() {
+            const weightResult = calculateWeight();
+            const finalWeight = weightResult.finalWeight;
+            
+            // Read from the new hidden input field
+            const selectedAgent = document.getElementById('agentSelectValue').value;
+            const searchInput = document.getElementById('agentSearchInput').value;
+
+            // Mandatory Field Checks
+            if (!document.getElementById('challanDate').value) {
+                alert("Please select a Date.");
+                return;
+            }
+            // Check if a valid agent has been selected (i.e., agentSelectValue is set)
+            if (!selectedAgent || selectedAgent !== searchInput) {
+                alert("Please search for and select a valid Agent from the dropdown list.");
+                return;
+            }
+            // Vehicle No. is optional, removed mandatory check
+            if (finalWeight <= 0) {
+                alert("Please enter valid Gross and Tare weights resulting in a positive final weight.");
+                return;
+            }
+
+            const checkboxes = document.querySelectorAll('#growerTableBody input[type="checkbox"]:checked');
+            if (checkboxes.length === 0) {
+                alert("Please select at least one grower for distribution.");
+                return;
+            }
+
+            // Get selected growers data
+            const selectedGrowerCodes = Array.from(checkboxes).map(cb => cb.dataset.code);
+            let selectedGrowers = filteredGrowers.filter(g => selectedGrowerCodes.includes(g.code));
+            selectedGrowers.forEach(g => g.weight = 0); // Reset weights
+
+            const mode = document.querySelector('input[name="distributionMode"]:checked').value;
+            let finalDistribution = [];
+
+            if (mode === 'proportional') {
+                finalDistribution = calculateProportionalWeight(selectedGrowers, finalWeight);
+            } else if (mode === 'manual') {
+                finalDistribution = calculateManualWeight(selectedGrowers, finalWeight);
+            }
+
+            if (!finalDistribution) {
+                // Calculation/validation failed (e.g., manual weight mismatch or zero land area)
+                return;
+            }
+
+            updateDistributionUI(finalDistribution);
+            generateChallan(finalDistribution, finalWeight, weightResult.deductionDisplay);
+        }
+
+        function updateDistributionUI(growers) {
+            // Reset all table display weights first
+            document.querySelectorAll('#growerTableBody td[id^="weight-"]').forEach(cell => cell.textContent = "0");
+
+            // Update only the successfully distributed growers
+            growers.forEach(grower => {
+                const weightCell = document.getElementById(`weight-${grower.code}`);
+                if (weightCell) {
+                    weightCell.textContent = grower.weight.toLocaleString();
+                }
+            });
+        }
+
+        // --- CHALLAN GENERATION (UI) ---
+
+        function generateChallan(distributedGrowers, finalWeight, deductionDisplay) {
+            // Read from the new hidden input field
+            const agent = document.getElementById('agentSelectValue').value;
+            const date = document.getElementById('challanDate').value;
+            // Vehicle No. might be empty now
+            const vehicleNo = document.getElementById('vehicleNo').value || "N/A"; 
+            const gross = parseFloat(document.getElementById('grossWeight').value) || 0;
+            const tare = parseFloat(document.getElementById('tareWeight').value) || 0;
+            const netWeightCalculated = gross - tare;
+
+            const challanNumber = `${agent.substring(0, 3).toUpperCase()}-${date.replace(/-/g, '')}-${Math.floor(Math.random() * 900) + 100}`;
+
+            // Populate Challan Header (UI)
+            document.getElementById('challanNumberDisplay').textContent = challanNumber;
+            document.getElementById('outDate').textContent = new Date(date).toLocaleDateString();
+            document.getElementById('outAgent').textContent = agent;
+            document.getElementById('outVehicleNo').textContent = vehicleNo;
+            document.getElementById('outFinalWeight').textContent = finalWeight.toLocaleString(); // CORRECTED LINE: Show final weight
+            document.getElementById('outDeductionRate').textContent = deductionDisplay;
+
+
+            // Populate Challan Details Table (UI)
+            const detailsBody = document.getElementById('challanDetailsBody');
+            detailsBody.innerHTML = '';
+            let totalDistributed = 0;
+            let detailsForPDF = [];
+
+            distributedGrowers.forEach(grower => {
+                if (grower.weight > 0) {
+                    const row = detailsBody.insertRow();
+                    row.innerHTML = `
+                        <td>${grower.code}</td>
+                        <td>${grower.name}</td>
+                        <td>${grower.weight.toLocaleString()}</td>
+                    `;
+                    totalDistributed += grower.weight;
+
+                    detailsForPDF.push({
+                        code: grower.code,
+                        name: grower.name,
+                        weight: grower.weight
+                    });
+                }
+            });
+
+            document.getElementById('outTotalWeight').textContent = totalDistributed.toLocaleString() + " Kg";
+            document.getElementById('challanOutput').style.display = 'block';
+
+            // Store final data globally for the PDF download function
+            currentChallanData.header = {
+                challanNumber: challanNumber,
+                date: date,
+                agent: agent,
+                vehicleNo: vehicleNo,
+                grossWeight: gross,
+                tareWeight: tare,
+                netWeight: netWeightCalculated,
+                deductionDisplay: deductionDisplay,
+                finalWeight: finalWeight
+            };
+            currentChallanData.details = detailsForPDF;
+            currentChallanData.totalDistributed = totalDistributed;
+        }
+// --- PDF DOWNLOAD IMPLEMENTATION (2 COPIES) ---
+
+    function drawSingleChallan(doc, data, yOffset, copyType) {
+    let y = yOffset;
+    const margin = 10;
+    const rightEdge = 200; // Assuming A4 width (210mm), 10mm margin on right
+    const width = rightEdge - margin;
+    const xCenter = margin + (width / 2);
+    const boxHeight = 135; // Estimated height for the challan content
+
+    // 0. Draw the main box border
+    doc.setDrawColor(0); // Black
+    doc.setLineWidth(0.5);
+    doc.rect(margin, y, width, boxHeight);
+    let currentY = y + 5;
+
+    // --- 1. Challan Header / Title with Fill ---
+    const headerHeight = 10;
+    doc.setFillColor(220, 220, 220); // Light Gray Fill
+    doc.rect(margin + 1, currentY, width - 2, headerHeight, 'F');
+    
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(0, 0, 0); // Black text
+    doc.text(`GREEN LEAF CHALLAN`, xCenter, currentY + 7, null, null, "center");
+    
+    doc.setFontSize(10);
+    doc.text(`(${copyType} Copy)`, rightEdge - 2, currentY + 7, null, null, "right");
+    currentY += headerHeight + 5; // Move past the header box
+
+    // --- 2. Challan Metadata Section (Two Columns) ---
+    const col1X = margin + 5;
+    const col2X = xCenter + 5;
+    const lineSpacing = 5;
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(50, 50, 50); // Darker gray for metadata
+
+    // Row 1
+    doc.setFont(undefined, 'bold');
+    doc.text(`Challan No:`, col1X, currentY);
+    doc.text(`Date:`, col2X, currentY);
+    doc.setFont(undefined, 'normal');
+    doc.text(`${data.header.challanNumber}`, col1X + 25, currentY);
+    doc.text(`${new Date(data.header.date).toLocaleDateString()}`, col2X + 15, currentY);
+    currentY += lineSpacing;
+
+    // Row 2
+    doc.setFont(undefined, 'bold');
+    doc.text(`Agent:`, col1X, currentY);
+    doc.text(`Vehicle No:`, col2X, currentY);
+    doc.setFont(undefined, 'normal');
+    const vehicleNoDisplay = data.header.vehicleNo && data.header.vehicleNo !== 'N/A' ? data.header.vehicleNo : 'N/A';
+    doc.text(`${data.header.agent}`, col1X + 15, currentY);
+    doc.text(`${vehicleNoDisplay}`, col2X + 25, currentY);
+    currentY += lineSpacing;
+
+    // Row 3 (Weights)
+    doc.setFont(undefined, 'bold');
+    doc.text(`Gross Weight:`, col1X, currentY);
+    doc.text(`Tare Weight:`, col2X, currentY);
+    doc.setFont(undefined, 'normal');
+    doc.text(`${data.header.grossWeight.toLocaleString()} Kg`, col1X + 30, currentY);
+    doc.text(`${data.header.tareWeight.toLocaleString()} Kg`, col2X + 27, currentY);
+    currentY += lineSpacing;
+    
+    // Row 4 (Deduction & Final Weight Box)
+    const deductionDisplay = data.header.deductionDisplay.replace(/[()]/g, '');
+    doc.setFont(undefined, 'bold');
+    doc.text(`Deduction:`, col1X, currentY);
+    doc.setFont(undefined, 'normal');
+    doc.text(`${deductionDisplay}`, col1X + 23, currentY);
+    
+    // FINAL WEIGHT Box
+    const finalWeightBoxX = col2X;
+    const finalWeightBoxY = currentY - 3;
+    const finalWeightBoxWidth = 80;
+    const finalWeightBoxHeight = 6;
+    doc.setFillColor(200, 255, 200); // Light Green for emphasis
+    doc.rect(finalWeightBoxX - 2, finalWeightBoxY, finalWeightBoxWidth, finalWeightBoxHeight, 'F');
+    doc.setTextColor(0, 50, 0); // Dark Green Text
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.text(`FINAL WEIGHT: ${data.header.finalWeight.toLocaleString()} Kg`, finalWeightBoxX + (finalWeightBoxWidth / 2) - 2, finalWeightBoxY + 4, null, null, "center");
+    
+    doc.setTextColor(0, 0, 0); // Reset color
+    currentY += lineSpacing + 5;
+    
+    // --- 3. Distribution Table Header with Fill ---
+    const tableHeaderHeight = 6;
+    doc.setFillColor(240, 240, 240); // Lighter Gray Fill
+    doc.rect(margin + 1, currentY - 2, width - 2, tableHeaderHeight, 'F');
+    
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    let xCode = margin + 5;
+    let xName = 55;
+    let xWeight = rightEdge - 5; // Right edge for right-aligned text
+
+    doc.text("Supplier Code", xCode, currentY + 2);
+    doc.text("Supplier Name", xName, currentY + 2);
+    doc.text("Weight (Kg)", xWeight, currentY + 2, null, null, "right");
+    currentY += tableHeaderHeight + 2;
+
+    // --- 4. Table Rows ---
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    
+    data.details.forEach(grower => {
+        doc.text(grower.code, xCode, currentY);
+        doc.text(grower.name, xName, currentY);
+        // Right align the weight column
+        doc.text(grower.weight.toLocaleString(), xWeight, currentY, null, null, "right");
+        currentY += 4;
+    });
+    
+    // --- 5. Footer Summary ---
+    currentY += 2;
+    // Separate the table from the total with a light line
+    doc.setDrawColor(150, 150, 150);
+    doc.setLineWidth(0.2);
+    doc.line(margin, currentY, rightEdge, currentY); 
+    currentY += 4;
+    
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    // Align total to the left of the weight column for a clean look
+    doc.text("TOTAL SUPPLIED LEAF QTY:", xWeight - 45, currentY, null, null, "right"); 
+    doc.text(data.totalDistributed.toLocaleString() + " Kg", xWeight, currentY, null, null, "right");
+    doc.setFont(undefined, 'normal');
+    currentY += 12;
+
+    // --- 6. Signature Section ---
+    doc.setDrawColor(0); // Reset to black
+    doc.setLineWidth(0.5);
+    const sigLineLength = 60; // Slightly longer signature line
+    const xSupplier = margin + 15;
+    const xReceiver = rightEdge - 15 - sigLineLength;
+
+    doc.setFontSize(7);
+    
+    // Supplier Signature
+    doc.line(xSupplier, currentY + 5, xSupplier + sigLineLength, currentY + 5);
+    doc.text("Supplier Signature (Grower/Agent)", xSupplier + (sigLineLength / 2), currentY + 9, null, null, "center");
+
+    // Receiver Signature
+    doc.line(xReceiver, currentY + 5, xReceiver + sigLineLength, currentY + 5);
+    doc.text("Receiver Signature (Factory/Company)", xReceiver + (sigLineLength / 2), currentY + 9, null, null, "center");
+
+    currentY += 12;
+    
+    // --- End of Challan ---
+    return currentY;
+}
+
+// Example for the main function (not requested, but for context)
+function generateChallanPDF(data) {
+    // Assuming doc is a new jsPDF instance (e.g., new jsPDF('p', 'mm', 'a4'))
+    // const doc = new jsPDF('p', 'mm', 'a4'); 
+    
+    let y = 10;
+    
+    // First Copy
+    y = drawSingleChallan(doc, data, y, "Company");
+    
+    // Add Separator Line (Simulating the cut line between copies)
+    doc.setDrawColor(150); 
+    doc.setLineDash([3, 2], 0); // Dashed line
+    doc.line(10, y + 5, 200, y + 5); 
+    doc.setLineDash([], 0); // Reset line style
+    y += 10;
+    
+    // Second Copy
+    y = drawSingleChallan(doc, data, y, "Agent/Grower");
+
+    // doc.save('challan.pdf');
+}
+
+        // MODIFIED PDF DOWNLOAD FUNCTION to center the tear line on A4
+        function downloadChallanPDF() {
+            if (!currentChallanData.header.challanNumber) {
+                alert("Please generate the Challan first by clicking 'Distribute Final Weight'.");
+                return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // A4 paper height is 297mm. The center point is 148.5mm.
+            const A4_CENTER_Y = 148.5;
+
+            // --- Draw the first copy (Top Half) - FACTORY COPY ---
+            drawSingleChallan(doc, currentChallanData, 10, "Factory");
+
+            // --- Draw a dashed line separator EXACTLY in the middle (148.5mm) ---
+            const tearLineY = A4_CENTER_Y;
+
+            doc.setLineDash([2, 2], 0);
+            doc.line(10, tearLineY, 200, tearLineY);
+            doc.setFontSize(7);
+            doc.setFont(undefined, 'normal');
+            // Position the text slightly above the line
+            doc.text("", 105, tearLineY - 2, null, null, "center");
+            doc.setLineDash([], 0);
+
+            // --- Draw the second copy (Bottom Half) - SUPPLIER COPY ---
+            // Start the second copy 5mm below the center line (148.5 + 5 = 153.5mm)
+            const secondCopyStartY = A4_CENTER_Y + 5;
+
+            drawSingleChallan(doc, currentChallanData, secondCopyStartY, "Supplier");
+
+            doc.save(`Challan_${currentChallanData.header.challanNumber}_2Copies.pdf`);
+        }
+
+        // --- TXT FORMATTING HELPER ---
+        function formatChallanToText(data, copyName) {
+            const header = data.header;
+            const details = data.details;
+            const vehicleNoDisplay = header.vehicleNo && header.vehicleNo !== 'N/A' ? header.vehicleNo : 'N/A';
+
+            let text = "";
+
+            // --- Header ---
+            text += "=================================================================\n";
+            text += `             GREEN LEAF CHALLAN - ${copyName.toUpperCase()}\n`;
+            text += "=================================================================\n";
+            text += `Challan No: ${header.challanNumber || 'N/A'}\n`;
+            text += `Date: ${new Date(header.date).toLocaleDateString() || 'N/A'}\n`;
+            text += `Agent: ${header.agent || 'N/A'}\n`;
+            text += `Vehicle No: ${vehicleNoDisplay}\n`;
+            text += "-----------------------------------------------------------------\n";
+            text += `Gross Weight (Kg): ${header.grossWeight.toLocaleString()}\n`;
+            text += `Tare Weight (Kg): ${header.tareWeight.toLocaleString()}\n`;
+            text += `Deduction Applied: ${header.deductionDisplay.replace(/[()]/g, '')}\n`;
+            text += "-----------------------------------------------------------------\n";
+            text += `NET LEAF WEIGHT: ${header.finalWeight.toLocaleString()} Kg\n`;
+            text += "=================================================================\n\n";
+
+            // --- Details Table ---
+            text += "CODE          | SUPPLIER NAME               | WEIGHT (Kg)\n";
+            text += "--------------|-----------------------------|--------------\n";
+
+            // Use padding for alignment in plain text
+            details.forEach(detail => {
+                const code = String(detail.code).padEnd(13);
+                const name = String(detail.name).padEnd(27).substring(0, 27); // Truncate long names
+                const weight = String(detail.weight.toLocaleString()).padStart(12);
+                text += `${code} | ${name} | ${weight}\n`;
+            });
+
+            text += "--------------|-----------------------------|--------------\n";
+            text += `TOTAL DISTRIBUTED: ${String(data.totalDistributed.toLocaleString()).padStart(45)} Kg\n`;
+            text += "=================================================================\n\n";
+
+            // --- Signatures (Simple text placeholder) ---
+            text += "                      _________________________              __________________________________\n";
+            text += "                      Supplier Signature                     Receiver Signature (Factory/Company)\n";
+
+            return text;
+        }
+
+        // --- TXT DOWNLOAD FUNCTION ---
+        function downloadChallanTXT() {
+            if (!currentChallanData.header.challanNumber) {
+                alert("Please generate the Challan first by clicking 'Distribute Final Weight'.");
+                return;
+            }
+
+            const factoryCopyText = formatChallanToText(currentChallanData, "Factory Copy");
+            const supplierCopyText = formatChallanToText(currentChallanData, "Supplier Copy");
+
+            const separator = "\n\n========================= CUT / TEAR HERE =========================\n\n";
+            const fullTextContent = factoryCopyText + separator + supplierCopyText;
+
+            const challanNo = currentChallanData.header.challanNumber.replace(/[^\w]/g, '_');
+            const filename = `Challan_${challanNo}_${currentChallanData.header.date}.txt`;
+
+            const blob = new Blob([fullTextContent], { type: 'text/plain;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        }
+    </script>
+</body>
+</html>
